@@ -16,6 +16,8 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
+📬 Contact: [marcos.romero@uam.es](mailto:marcos.romero@uam.es)
+
 ## Introduction
 
 This document is a step-by-step tutorial on how to detect **abrupt changes** (or *shocks*) in the latent developmental trajectory of a subject using continuous-time dynamic models fitted with the [`dynr`](https://cran.r-project.org/package=dynr) package.
