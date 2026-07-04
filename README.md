@@ -8,7 +8,7 @@ The method fits a **deterministic** continuous-time dual latent change score mod
 
 This code accompanies:
 
-> Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). *Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models* [manuscript in preparation].
+> Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). *Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models* [manuscript in under review].
 
 See the paper for the full simulation study, the motivation behind the combined detection criterion (ρ² & θ), and the rationale for the θ = 1.65 threshold used by default.
 
