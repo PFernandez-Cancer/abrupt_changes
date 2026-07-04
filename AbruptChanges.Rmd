@@ -1,0 +1,244 @@
+---
+title: "Detecting Abrupt Changes in Latent Dynamic Models"
+author: "Marcos Romero-Suárez, Sy-Miin Chow, Pablo F. Cáncer & Eduardo Estrada"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: flatly
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Introduction
+
+This document is a step-by-step tutorial on how to detect **abrupt changes** (or *shocks*) in the latent developmental trajectory of a subject using continuous-time dynamic models fitted with the [`dynr`](https://cran.r-project.org/package=dynr) package.
+
+This tutorial accompanies *Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [manuscript under review]*. The statistics, thresholds, and modeling choices used below follow that paper directly; see it for the full simulation study and rationale.
+
+The overall logic is as follows:
+
+1. We fit a **deterministic** model (no process noise), so that any variability not explained by the structural dynamics is "exposed" as a candidate shock.
+2. We use `dynr`'s innovation diagnostics (`dynr.taste()`) to **detect** in which subjects, and at which time points, those shocks occur.
+3. We build an **exogenous covariate** (`delta_L`) that captures the magnitude of each detected shock.
+4. We refit a **stochastic** model (with process noise) that incorporates that covariate, so the model distinguishes between "normal" stochastic variability and pointwise jumps explained by the detected shocks.
+5. We inspect and **visualize** the results at the individual level.
+
+> **Note:** the helper functions (`fit_deterministic()`, `detect_shocks()`, `construct_shock_covariate()`, `fit_stochastic_with_shocks()`, and `plot_subject()`) are encapsulated in `functions_AbruptChanges.R` and loaded via `source()` below. This Rmd does not duplicate them: if you want to see the internal implementation, check that script directly.
+
+---
+
+## Packages, data, and functions
+
+```{r load}
+library(dynr)
+library(ggplot2)
+
+data <- read.csv("data.csv")
+source("functions_AbruptChanges.R")
+```
+
+The dataset has a panel/long format, with three columns:
+
+- `id`: subject identifier.
+- `time`: observation time (continuous, not necessarily equally spaced).
+- `X`: observed variable (e.g., reading ability).
+
+```{r data-preview}
+head(data)
+```
+
+---
+
+## Step 1. Fit the deterministic model
+
+The latent system follows a continuous-time **dual latent change score** structure, combining:
+
+- a **state-dependence** component (autoregressive), governed by the parameter $\beta$, and
+- an additional **latent change** component, $X_a$.
+
+(In the notation of the paper, these correspond to $\eta_l$ and $\eta_a$ respectively --- here we use $X_{level}$ and $X_a$ to match the state names used in the `dynr` model specification below)
+
+Formally, the dynamics are specified as:
+
+$$
+\frac{dX_{level}}{dt} = \beta \, X_{level} + X_a, \qquad \frac{dX_a}{dt} = 0
+$$
+
+That is, $X_a$ acts as a sort of constant "push" for each subject (it does not change over time), while $X_{level}$ evolves as a function of itself and that push.
+
+The **key point of this first fit** is that the process noise is fixed to zero. This means the latent trajectory is **fully determined** by the model's structural dynamics — there is no room for stochastic fluctuations.
+
+The practical consequence is that **any deviation** between what the model predicts and what actually happens cannot be attributed to process noise (since there is none): it is interpreted as a candidate **innovation shock** (an abrupt change not explained by the dynamics).
+
+```{r fit-deterministic, results = "hide"}
+res1 <- fit_deterministic(data)
+```
+
+`res1` contains both the model (`res1$model`) and the fitted object (`res1$fit`), which we will use in the next step.
+
+---
+
+## Step 2. Extract innovation diagnostics and detect shocks
+
+`dynr.taste()` computes, for each time point, a diagnostic based on the Kalman filter's **innovations**: the difference between the observed value and the value predicted by the model just before observing it. The larger that difference (in standardized terms), the more evidence that this point does not follow the expected dynamics — i.e., that there is an **innovative outlier**, which from here on we simply call a **shock** for readability.
+
+```{r taste, results = "hide"}
+shock_diagnostics <- dynr.taste(
+  res1$model,
+  res1$fit,
+  which.state = "Xlevel"
+)
+```
+
+Based on these diagnostics, `detect_shocks()` selects the points considered to be shocks. This function supports three criteria (`method` argument):
+
+- `"chi"`: p-value of the global chi-square test (`chi.inn.pval`) below the threshold `p`.
+- `"t"`: p-value of the univariate t-test for the specified state (`t.inn.pval`) below `p`.
+- `"combined"` (the one used here): requires both **statistical significance** (`chi_p < p`) **and** a **minimum effect magnitude**, measured as the standardized innovation ($\theta$ = scaled innovation) above `theta_threshold` (1.65 by default, the approximate one-tailed 95% cutoff). Combining both criteria avoids flagging points that are "significant" only due to sample size but have a small effect in magnitude. This fixed thershold was selected in Romero-Suárez et al. after a robustness analysis comparing it against condition-specific optimal cutoffs across the simulated scenarios, showing consistently strong balanced accuracy --- so it isn't an arbitrary default, but a simulation-validated choice.
+
+The function also excludes the **first time point of each subject**: at that point the innovation has no "past" to rely on (there is no prior prediction within the subject's own series), so the statistic is confounded with initialization effects and is not reliable.
+
+```{r detect-shocks}
+shocks_locations <- detect_shocks(shock_diagnostics, data, method = "combined")
+```
+
+`shocks_locations` is a data frame with the `id` and `time` columns of each detected shock.
+
+---
+
+## Step 3. Construct the shock covariate
+
+Before refitting the model, we need to convert the list of detected shocks into a
+**time-varying covariate** (`delta_L`) that the model can use as an exogenous variable.
+
+`construct_shock_covariate()`:
+
+- Starts with `delta_L = 0` for all rows (no shock by default).
+- For each row in `shocks_locations`, it looks up the corresponding row in `data` (by `id` and `time`) and assigns as the shock magnitude the estimated innovation value (`inn$delta.inn`) for the specified state (`level = "Xlevel"`).
+
+```{r construct-covariate}
+data2 <- construct_shock_covariate(
+  data = data,
+  shocks_locations = shocks_locations,
+  inn = shock_diagnostics,
+  level = "Xlevel"
+)
+```
+
+---
+
+## Step 4. Fit the stochastic model with shocks
+
+We now introduce two changes relative to the Step 1 model:
+
+1. **Process noise is allowed**: the system is no longer purely deterministic. We add a stochastic term, $dW(t)$ --- a Wiener process increment --- to the state equation, so the latent trajectory can fluctuate randomly around its structural dynamics, not just follow them exactly.
+2. `delta_L` is added as an exogenous covariate in the equation for $X_{level}$ using the estimated shock magnitudes obtained in Step 3.
+
+$$
+dX_{level} = (\beta \, X_{level} + X_a + \delta_L)dt + dW(t)
+$$
+Note that $dW(t)$ is written as a separate additive term, outside the $dt$ parenthesis. This isn't just a notational preference. A Wiener process increment doesn't scale with $dt$ the way a deterministic rate of change does (formally, $dW(t)/dt$ isn't well defined), so lumping it inside the (·) $dt$ term (as one might be tempted to do for compactness) would misrepresent the model. Keeping it separate makes explicit that we're adding two *distinct* sources of variability to the deterministic part of Step 1:
+
+- **Process noise** ($dW(t)$), which represents ordinary, continuous stochastic fluctuation - the kind the model expects and absorbs at every time point.
+
+- **Shocks** ($\delta_L$), which are discrete, pointwise jumps at specific times, already localized in Step 2 and now fed into the model as a known covariate rather than left to be reinterpreted as noise.
+
+```{r fit-stochastic, results = "hide"}
+res2 <- fit_stochastic_with_shocks(data2)
+```
+
+```{r summary-stochastic, echo = TRUE}
+summary(res2$fit)
+```
+
+---
+
+## Step 5. Inspect the detected shocks
+
+Before visualizing, it's useful to summarize which subjects have shocks, at which time points, and with what estimated magnitude.
+
+This step implements the paper's **person-level classification rule**: a subject is considered affected if at least one of their time points exceeds the detection threshold - a single flagged occasion is enough, no matter how many total time points that subject has.
+
+```{r inspect-shocks}
+# Subjects with at least one detected shock
+shock_ids <- unique(shocks_locations$id)
+print(shock_ids)
+
+# Time point and magnitude of each shock incorporated into the model
+data2[data2$delta_L != 0,
+      c("id", "time", "delta_L")]
+```
+
+---
+
+## Step 6. Plot individual trajectories
+
+`plot_subject()` lets you plot, for a given subject, the estimated latent trajectory (`mode = "latent"`), the observed data (`mode = "observed"`), or both overlaid (`mode = "both"`), additionally marking detected shocks as vertical lines (`show_shocks = TRUE`) and, optionally, a confidence band around the latent estimate (`ci = TRUE`).
+
+The function is more flexible than what the examples below show. It also allows customizing colors (`latent_color`, `observed_color`, `shock_color`), axis limits (`x_lims`, `y_lims`), the shock line type (`linetype`), and the confidence band's transparency (`latent_alpha`). The legend is built dynamically: only the series that were actually drawn show up in it (e.g., if `show_shocks = TRUE` but the subject has no shocks, the legend won't include that entry).
+
+Below we compare a subject **with** a detected shock against one **without** a shock, each shown in two versions: latent trajectory only, and latent together with the observed data.
+
+
+### Subject WITH a shock
+
+```{r plot-shock-latent}
+plot_subject(
+  data = data2,
+  subject = shock_ids[17], # id of the subject
+  fit = res2$fit,
+  shocks_locations = shocks_locations,
+  mode = "latent",
+  ci = TRUE,
+  show_shocks = TRUE
+)
+```
+
+```{r plot-shock-both}
+plot_subject(
+  data = data2,
+  subject = shock_ids[17], # same subject
+  fit = res2$fit,
+  shocks_locations = shocks_locations,
+  mode = "both",
+  ci = TRUE,
+  show_shocks = TRUE
+)
+```
+
+### Subject WITHOUT a shock (control/baseline case)
+
+```{r plot-noshock-latent}
+plot_subject(
+  data = data2,
+  subject = 1, # id of the subject
+  fit = res2$fit,
+  shocks_locations = shocks_locations,
+  mode = "latent",
+  ci = TRUE,
+  show_shocks = TRUE # no visual effect: this subject has no entries in shocks_locations
+)
+```
+
+```{r plot-noshock-both}
+plot_subject(
+  data = data2,
+  subject = 1,
+  fit = res2$fit,
+  shocks_locations = shocks_locations,
+  mode = "both",
+  ci = TRUE,
+  show_shocks = TRUE
+)
+```
+
+
+## References
+*Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [manuscript under review]*
