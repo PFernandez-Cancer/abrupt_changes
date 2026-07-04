@@ -16,7 +16,7 @@ See the paper for the full simulation study, the motivation behind the combined 
 
 A rendered, step-by-step walkthrough is available here:
 
-**[https://PFernandez-Cancer.github.io/abrupt_changes/AbruptChanges.html](https://tu-usuario.github.io/tu-repo/AbruptChanges.html)**
+**[https://PFernandez-Cancer.github.io/abrupt_changes/AbruptChanges.html](https://PFernandez-Cancer.github.io/abrupt_changes/AbruptChanges.html)**
 
 No installation needed — just open the link.
 
