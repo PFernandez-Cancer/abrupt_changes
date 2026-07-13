@@ -32,7 +32,7 @@ The overall logic is as follows:
 4. We refit a **stochastic** model (with process noise) that incorporates that covariate, so the model distinguishes between "normal" stochastic variability and pointwise jumps explained by the detected shocks.
 5. We inspect and **visualize** the results at the individual level.
 
-> **Note:** the helper functions (`fit_deterministic()`, `detect_shocks()`, `construct_shock_covariate()`, `fit_stochastic_with_shocks()`, and `plot_subject()`) are encapsulated in `functions_AbruptChanges.R` and loaded via `source()` below. This Rmd does not duplicate them: if you want to see the internal implementation, check that script directly.
+> **Note:** the helper functions (`fit_deterministic()`, `detect_shocks()`, `construct_shock_covariate()`, `fit_stochastic_with_shocks()`, and `plot_subject()`) are encapsulated in `functions_AbruptChanges.R` and loaded via `source()` below. This Rmd does not duplicate them: if you want to see the internal implementation, check that script directly at https://github.com/PFernandez-Cancer/abrupt_changes.
 
 ---
 
@@ -144,7 +144,7 @@ We now introduce two changes relative to the Step 1 model:
 2. `delta_L` is added as an exogenous covariate in the equation for $X_{level}$ using the estimated shock magnitudes obtained in Step 3.
 
 $$
-dX_{level} = (\beta \, X_{level} + X_a + \delta_L)dt + dW(t)
+dX_{level} = (\beta \, X_{level} + X_a + \delta_L)dt + dW(t), \qquad \frac{dX_a}{dt} = 0
 $$
 Note that $dW(t)$ is written as a separate additive term, outside the $dt$ parenthesis. This isn't just a notational preference. A Wiener process increment doesn't scale with $dt$ the way a deterministic rate of change does (formally, $dW(t)/dt$ isn't well defined), so lumping it inside the (·) $dt$ term (as one might be tempted to do for compactness) would misrepresent the model. Keeping it separate makes explicit that we're adding two *distinct* sources of variability to the deterministic part of Step 1:
 
