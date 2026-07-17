@@ -42,8 +42,19 @@ The overall logic is as follows:
 library(dynr)
 library(ggplot2)
 
-data <- read.csv("data.csv")
 source("functions_AbruptChanges.R")
+data <- read.csv("data.csv")
+
+names(data) <- c("id", "time", "X" )
+data$time <- data$time - min(data$time)
+data$X <- as.numeric(scale(data$X))
+
+# Remove rows without info
+data <- data[!is.na(data$X),]
+data <- data[!is.na(data$time),]
+
+# KEY SAFEGUARD: Dynr requires data sorted by case, then time
+data <- data[order(data$id, data$time), ] 
 ```
 
 The dataset has a panel/long format, with three columns:
@@ -192,26 +203,29 @@ Below we compare a subject **with** a detected shock against one **without** a s
 ### Subject WITH a shock
 
 ```{r plot-shock-latent}
+c_id <- 2L
 plot_subject(
   data = data2,
-  subject = shock_ids[17], # id of the subject
+  subject = shock_ids[c_id], # id of the subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "latent",
   ci = TRUE,
-  show_shocks = TRUE
-)
+  show_shocks = TRUE,
+  plot_group = TRUE
+) 
 ```
 
 ```{r plot-shock-both}
 plot_subject(
   data = data2,
-  subject = shock_ids[17], # same subject
+  subject = shock_ids[c_id], # same subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "both",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE,
+  plot_group = TRUE
 )
 ```
 
@@ -220,24 +234,26 @@ plot_subject(
 ```{r plot-noshock-latent}
 plot_subject(
   data = data2,
-  subject = 1, # id of the subject
+  subject = data2$id[10], # id of the subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "latent",
   ci = TRUE,
-  show_shocks = TRUE # no visual effect: this subject has no entries in shocks_locations
+  show_shocks = TRUE, # no visual effect: this subject has no entries in shocks_locations
+  plot_group = TRUE
 )
 ```
 
 ```{r plot-noshock-both}
 plot_subject(
   data = data2,
-  subject = 1,
+  subject = data2$id[10],
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "both",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE,
+  plot_group = TRUE
 )
 ```
 

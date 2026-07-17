@@ -1,5 +1,10 @@
 fit_deterministic <- function(data){
   
+  # dynr requires each subject's rows to form one contiguous, time-ordered
+  # block. Sort defensively; wave-sorted panel files fail silently otherwise.
+  data <- as.data.frame(data)
+  data <- data[order(data$id, data$time), ]
+  
   # Convert raw data into dynr format.
   # This step defines the structure of the panel data:
   # subject ID, time, and observed variable.
@@ -20,11 +25,20 @@ fit_deterministic <- function(data){
   )
   
   # Set initial values for the latent states and their variability.
+  # Data-driven starting values for the initial state and its covariance.
+  # meanX0 is seeded from the first observation of each subject (earliest
+  # time), and varX0 from the overall variance of X. This keeps the
+  # optimizer well scaled regardless of the metric of X.
+  ord <- order(data$id, data$time)
+  first_wave_X <- data$X[ord][!duplicated(data$id[ord])]
+  mean_first   <- mean(first_wave_X)
+  var_X        <- var(data$X)
+  
   # These are starting points for the estimation algorithm.
   initial <- prep.initial(
-    values.inistate = c(0, 0),
+    values.inistate = c(mean_first, 0),
     params.inistate = c("meanX0", "meanXa"),
-    values.inicov = matrix(c(1, 0.1, 0.1, 0.5), 2),
+    values.inicov = matrix(c(var_X, 0.1, 0.1, 0.5), 2),
     params.inicov = matrix(c("varX0", "covX0Xa", "covX0Xa", "varXa"), 2)
   )
   
@@ -125,7 +139,44 @@ detect_shocks <- function(taste, data,
   shocks
 }
 
-fit_stochastic_with_shocks <- function(data){
+fit_stochastic_with_shocks <- function(data, start_fit = NULL){
+  
+  # dynr requires each subject's rows to form one contiguous, time-ordered
+  # block. Sort defensively; wave-sorted panel files fail silently otherwise.
+  data <- as.data.frame(data)
+  data <- data[order(data$id, data$time), ]
+  
+  # Data-driven default starting values (used when start_fit is not supplied).
+  ord <- order(data$id, data$time)
+  first_wave_X <- data$X[ord][!duplicated(data$id[ord])]
+  
+  sv <- list(
+    beta    = -0.2,
+    dynerr  = 0.01,
+    meserr  = 0.1,
+    meanX0  = mean(first_wave_X),
+    meanXa  = 0,
+    varX0   = var(data$X),
+    covX0Xa = 0.1,
+    varXa   = 0.5
+  )
+  
+  # If a fitted Step 1 model is provided, seed the shared parameters from it.
+  # dynerr is not present in the deterministic model, so it keeps its default.
+  if (!is.null(start_fit)) {
+    cf <- coef(start_fit)
+    if ("beta"    %in% names(cf)) sv$beta    <- unname(cf["beta"])
+    if ("meserr"  %in% names(cf)) sv$meserr  <- unname(cf["meserr"])
+    if ("meanX0"  %in% names(cf)) sv$meanX0  <- unname(cf["meanX0"])
+    if ("meanXa"  %in% names(cf)) sv$meanXa  <- unname(cf["meanXa"])
+    if ("varX0"   %in% names(cf)) sv$varX0   <- unname(cf["varX0"])
+    if ("covX0Xa" %in% names(cf)) sv$covX0Xa <- unname(cf["covX0Xa"])
+    if ("varXa"   %in% names(cf)) sv$varXa   <- unname(cf["varXa"])
+  }
+  
+  # Floor variances to keep them off the zero boundary.
+  sv$varX0 <- max(sv$varX0, 0.01)
+  sv$varXa <- max(sv$varXa, 0.01)
   
   # Convert the dataset into dynr format.
   # In this version, we include an additional time-varying covariate (delta_L),
@@ -150,9 +201,9 @@ fit_stochastic_with_shocks <- function(data){
   # Set initial values for the latent states and their variability.
   # These provide starting points for the estimation algorithm.
   initial <- prep.initial(
-    values.inistate = c(0, 0),
+    values.inistate = c(sv$meanX0, sv$meanXa),
     params.inistate = c("meanX0", "meanXa"),
-    values.inicov = matrix(c(1, 0.1, 0.1, 0.5), 2),
+    values.inicov = matrix(c(sv$varX0, sv$covX0Xa, sv$covX0Xa, sv$varXa), 2),
     params.inicov = matrix(c("varX0", "covX0Xa", "covX0Xa", "varXa"), 2)
   )
   
@@ -160,9 +211,9 @@ fit_stochastic_with_shocks <- function(data){
   # Here, latent noise is allowed (dynerr), meaning that the system
   # can vary stochastically around its deterministic dynamics.
   noise <- prep.noise(
-    values.latent = matrix(c(0.1, 0, 0, 0), 2),
+    values.latent = matrix(c(sv$dynerr, 0, 0, 0), 2),
     params.latent = matrix(c("dynerr", NA, NA, NA), 2),
-    values.observed = matrix(0.1),
+    values.observed = matrix(sv$meserr),
     params.observed = "meserr"
   )
   
@@ -176,7 +227,7 @@ fit_stochastic_with_shocks <- function(data){
       Xlevel ~ beta * Xlevel + Xa + delta_L,
       Xa ~ 0
     ),
-    startval = c(beta = -0.2),
+    startval = c(beta = sv$beta),
     isContinuousTime = TRUE
   )
   
@@ -223,8 +274,16 @@ construct_shock_covariate <- function(data,
     stop("The specified level was not found in inn$delta.inn.")
   }
   
-  # Construct shock covariate from estimated innovations
-  data_out$delta_L[idx[valid]] <- delta_mat[level, idx[valid]]
+  # Construct shock covariate from estimated innovations.
+  # Guard against non-finite magnitudes (NaN/Inf) returned by the smoother:
+  # a single non-finite covariate value makes the Step 4 likelihood NaN.
+  mag <- delta_mat[level, idx[valid]]
+  n_bad <- sum(!is.finite(mag))
+  if (n_bad > 0) {
+    warning(sprintf("%d non-finite shock magnitude(s) set to 0.", n_bad))
+    mag[!is.finite(mag)] <- 0
+  }
+  data_out$delta_L[idx[valid]] <- mag
   
   # Return dataset with constructed covariate
   data_out
@@ -244,7 +303,8 @@ plot_subject <- function(data,
                          shock_color = "red",
                          linetype = "dashed",
                          y_lims = NULL,
-                         x_lims = NULL){
+                         x_lims = NULL,
+                         plot_group = TRUE){
   
   # Validate and resolve the mode argument
   mode <- match.arg(mode)
@@ -394,6 +454,8 @@ plot_subject <- function(data,
       guides(fill = guide_legend(order = 2)) +
       labs(fill = NULL)
   }
+  
+  if(plot_group) {p <- p + geom_line(data=data, aes(x=time, y=X, group=id), alpha = .05)}
   
   p
 }

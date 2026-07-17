@@ -3,8 +3,19 @@
 library(dynr)
 library(ggplot2)
 
-data <- read.csv("data.csv")
 source("functions_AbruptChanges.R")
+data <- read.csv("data.csv")
+
+names(data) <- c("id", "time", "X" )
+data$time <- data$time - min(data$time)
+data$X <- as.numeric(scale(data$X))
+
+# Remove rows without info
+data <- data[!is.na(data$X),]
+data <- data[!is.na(data$time),]
+
+# KEY SAFEGUARD: Dynr requires data sorted by case, then time
+data <- data[order(data$id, data$time), ]
 
 #### STEP 1. Fit deterministic continuous-time model ####
 
@@ -82,25 +93,28 @@ data2[data2$delta_L != 0,
 # ---- Subject WITH a shock ----
 
 # Latent estimate + CI band, shock marked as a vertical line
+c_id <- 2L
 plot_subject(
   data = data2,
-  subject = shock_ids[17], # id of the subject
+  subject = shock_ids[c_id], # id of the subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "latent",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE,
+  plot_group = TRUE
 )
 
 # Same subject, now overlaying observed data on top of the latent estimate
 plot_subject(
   data = data2,
-  subject = shock_ids[17], # id of the subject
+  subject = shock_ids[c_id], # same subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "both",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE,
+  plot_group = TRUE
 )
 
 # ---- Subject WITHOUT a shock (control/baseline case) ----
@@ -109,21 +123,23 @@ plot_subject(
 # since this subject has no entries in shocks_locations
 plot_subject(
   data = data2,
-  subject = 1, # id of the subject
+  subject = data2$id[10], # id of the subject
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "latent",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE, # no visual effect: this subject has no entries in shocks_locations
+  plot_group = TRUE
 )
 
 # Same subject, latent + observed overlay for direct comparison
 plot_subject(
   data = data2,
-  subject = 1, # id of the subject
+  subject = data2$id[10],
   fit = res2$fit,
   shocks_locations = shocks_locations,
   mode = "both",
   ci = TRUE,
-  show_shocks = TRUE
+  show_shocks = TRUE,
+  plot_group = TRUE
 )
