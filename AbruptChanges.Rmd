@@ -10,6 +10,9 @@ output:
     code_folding: show
     theme: flatly
     df_print: paged
+  pdf_document:
+    toc: true
+    toc_depth: '3'
 ---
 
 ```{r setup, include=FALSE}
@@ -22,7 +25,8 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 This document is a step-by-step tutorial on how to detect **abrupt changes** (or *shocks*) in the latent developmental trajectory of a subject using continuous-time dynamic models fitted with the [`dynr`](https://cran.r-project.org/package=dynr) package.
 
-This tutorial accompanies *Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [Manuscript submitted for publication]*. The statistics, thresholds, and modeling choices used below follow that paper directly; see it for the full simulation study and rationale.
+This tutorial accompanies *Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [Manuscript submitted for publication]*. 
+The statistics, thresholds, and modeling choices used below follow that paper directly; see it for the full simulation study and rationale.
 
 The overall logic is as follows:
 
@@ -203,7 +207,7 @@ Below we compare a subject **with** a detected shock against one **without** a s
 ### Subject WITH a shock
 
 ```{r plot-shock-latent}
-c_id <- 2L
+c_id <- 17L
 plot_subject(
   data = data2,
   subject = shock_ids[c_id], # id of the subject
@@ -259,4 +263,4 @@ plot_subject(
 
 
 ## References
-*Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [manuscript under review]*
+*Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [manuscript submitted for publication]*
