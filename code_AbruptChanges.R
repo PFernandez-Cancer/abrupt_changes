@@ -93,7 +93,7 @@ data2[data2$delta_L != 0,
 # ---- Subject WITH a shock ----
 
 # Latent estimate + CI band, shock marked as a vertical line
-c_id <- 2L
+c_id <- 17L
 plot_subject(
   data = data2,
   subject = shock_ids[c_id], # id of the subject

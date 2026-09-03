@@ -78,7 +78,7 @@ fit_deterministic <- function(data){
 detect_shocks <- function(taste, data,
                           method = c("combined", "chi", "t"),
                           p = 0.05,
-                          theta_threshold = 1.65,
+                          SOI_threshold = 1.65,
                           level = "Xlevel"){
   
   method <- match.arg(method)
@@ -86,7 +86,7 @@ detect_shocks <- function(taste, data,
   # Extract diagnostics
   
   delta <- taste$delta.inn[level, ]
-  theta <- scale(delta)[, 1]
+  SOI <- scale(delta)[, 1]
   
   chi_p <- taste$chi.inn.pval
   t_p   <- taste$t.inn.pval[level, ]
@@ -104,7 +104,7 @@ detect_shocks <- function(taste, data,
   if(method == "combined"){
     pos <- which(
       chi_p < p &
-        abs(theta) > theta_threshold
+        abs(SOI) > SOI_threshold
     )
   }
   
