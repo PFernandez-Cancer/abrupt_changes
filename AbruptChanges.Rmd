@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 This document is a step-by-step tutorial on how to detect **abrupt changes** (or *shocks*) in the latent developmental trajectory of a subject using continuous-time dynamic models fitted with the [`dynr`](https://cran.r-project.org/package=dynr) package.
 
-This tutorial accompanies *Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [manuscript under review]*. The statistics, thresholds, and modeling choices used below follow that paper directly; see it for the full simulation study and rationale.
+This tutorial accompanies *Romero-Suárez, M., Chow, S.-M., Cáncer, P. F., & Estrada, E. (2026). Detecting Abrupt Changes in Developmental Trajectories with Continuous-Time State-Space Models [Manuscript submitted for publication]*. The statistics, thresholds, and modeling choices used below follow that paper directly; see it for the full simulation study and rationale.
 
 The overall logic is as follows:
 
@@ -114,7 +114,7 @@ Based on these diagnostics, `detect_shocks()` selects the points considered to b
 
 - `"chi"`: p-value of the global chi-square test (`chi.inn.pval`) below the threshold `p`.
 - `"t"`: p-value of the univariate t-test for the specified state (`t.inn.pval`) below `p`.
-- `"combined"` (the one used here): requires both **statistical significance** (`chi_p < p`) **and** a **minimum effect magnitude**, measured as the standardized innovation ($\theta$ = scaled innovation) above `theta_threshold` (1.65 by default, the approximate one-tailed 95% cutoff). Combining both criteria avoids flagging points that are "significant" only due to sample size but have a small effect in magnitude. This fixed thershold was selected in Romero-Suárez et al. after a robustness analysis comparing it against condition-specific optimal cutoffs across the simulated scenarios, showing consistently strong balanced accuracy --- so it isn't an arbitrary default, but a simulation-validated choice.
+- `"combined"` (the one used here): requires both **statistical significance** (`chi_p < p`) **and** a **minimum effect magnitude**, measured as the standardized innovation (SOI = scaled innovation) above `SOI_threshold` (1.65 by default, the approximate one-tailed 95% cutoff). Combining both criteria avoids flagging points that are "significant" only due to sample size but have a small effect in magnitude. This fixed thershold was selected in Romero-Suárez et al. after a robustness analysis comparing it against condition-specific optimal cutoffs across the simulated scenarios, showing consistently strong balanced accuracy --- so it isn't an arbitrary default, but a simulation-validated choice.
 
 The function also excludes the **first time point of each subject**: at that point the innovation has no "past" to rely on (there is no prior prediction within the subject's own series), so the statistic is confounded with initialization effects and is not reliable.
 
@@ -155,11 +155,11 @@ We now introduce two changes relative to the Step 1 model:
 2. `delta_L` is added as an exogenous covariate in the equation for $X_{level}$ using the estimated shock magnitudes obtained in Step 3.
 
 $$
-dX_{level} = (\beta \, X_{level} + X_a + \delta_L)dt + dW(t), \qquad \frac{dX_a}{dt} = 0
+dX_{level} = (\beta \, X_{level} + X_a + \delta_L)dt + GdW(t), \qquad \frac{dX_a}{dt} = 0
 $$
-Note that $dW(t)$ is written as a separate additive term, outside the $dt$ parenthesis. This isn't just a notational preference. A Wiener process increment doesn't scale with $dt$ the way a deterministic rate of change does (formally, $dW(t)/dt$ isn't well defined), so lumping it inside the (·) $dt$ term (as one might be tempted to do for compactness) would misrepresent the model. Keeping it separate makes explicit that we're adding two *distinct* sources of variability to the deterministic part of Step 1:
+Note that $GdW(t)$ is written as a separate additive term, outside the $dt$ parenthesis. This isn't just a notational preference. A Wiener process increment doesn't scale with $dt$ the way a deterministic rate of change does (formally, $dW(t)/dt$ isn't well defined), so lumping it inside the (·) $dt$ term (as one might be tempted to do for compactness) would misrepresent the model. Keeping it separate makes explicit that we're adding two *distinct* sources of variability to the deterministic part of Step 1:
 
-- **Process noise** ($dW(t)$), which represents ordinary, continuous stochastic fluctuation - the kind the model expects and absorbs at every time point.
+- **Process noise** ($GdW(t)$), which represents ordinary, continuous stochastic fluctuation - the kind the model expects and absorbs at every time point.
 
 - **Shocks** ($\delta_L$), which are discrete, pointwise jumps at specific times, already localized in Step 2 and now fed into the model as a known covariate rather than left to be reinterpreted as noise.
 
